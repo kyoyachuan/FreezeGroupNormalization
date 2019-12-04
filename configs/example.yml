@@ -1,0 +1,31 @@
+batchnorm_128:
+        batch_size: 128
+        group_size: 
+        learning_rate: 0.01
+
+batchnorm_2:
+        batch_size: 2
+        group_size:
+        learning_rate: 0.00015625
+
+groupnorm_128_32:
+        batch_size: 128
+        group_size: 32
+        learning_rate: 0.01
+
+groupnorm_2_32:
+        batch_size: 2
+        group_size: 32
+        learning_rate: 0.00015625
+
+freezegroupnorm_128_32:
+        batch_size: 128
+        group_size: 32
+        learning_rate: 0.01
+
+freezegroupnorm_2_32:
+        batch_size: 2
+        group_size: 32
+        learning_rate: 0.00015625
+
+
