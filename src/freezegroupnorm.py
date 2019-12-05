@@ -97,8 +97,9 @@ class FreezeGroupNormalization(Layer):
     def call(self, inputs, training=None):
         old_shape = (tf.shape(inputs)[0],) + K.int_shape(inputs)[1:]
         if self.group:
-            new_shape = (tf.shape(inputs)[0],) + old_shape[1:3] + (old_shape[self.axis] // self.group, self.group)
+            new_shape = (tf.shape(inputs)[0],) + old_shape[1:3] + (self.group, old_shape[self.axis] // self.group)
             inputs_reshape = K.reshape(inputs, shape=new_shape)
+            inputs_reshape = K.permute_dimensions(inputs_reshape, pattern=(0,1,2,-1,-2))
             input_shape = K.int_shape(inputs_reshape)
         else:
             inputs_reshape = inputs
@@ -137,7 +138,7 @@ class FreezeGroupNormalization(Layer):
                     broadcast_gamma,
                     axis=self.axis,
                     epsilon=self.epsilon)
-                return K.reshape(outputs, old_shape)
+                return K.reshape(K.permute_dimensions(outputs, (0,1,2,-1,-2)), old_shape)
             else:
                 outputs = K.batch_normalization(
                     inputs_reshape,
@@ -147,7 +148,7 @@ class FreezeGroupNormalization(Layer):
                     self.gamma,
                     axis=self.axis,
                     epsilon=self.epsilon)
-                return K.reshape(outputs, old_shape)
+                return K.reshape(K.permute_dimensions(outputs, (0,1,2,-1,-2)), old_shape)
 
         # If the learning phase is *static* and set to inference:
         if training in {0, False}:
@@ -176,7 +177,7 @@ class FreezeGroupNormalization(Layer):
                                                  self.momentum)],
                         inputs)
 
-        normed_training = K.reshape(normed_training, old_shape)
+        normed_training = K.reshape(K.permute_dimensions(normed_training, (0,1,2,-1,-2)), old_shape)
 
         # Pick the normalized form corresponding to the training phase.
         return K.in_train_phase(normed_training,
