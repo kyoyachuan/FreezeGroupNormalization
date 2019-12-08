@@ -5,13 +5,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from keras.engine.base_layer import Layer, InputSpec
+from keras.engine.base_layer import Layer #, InputSpec
 from keras import initializers
 from keras import regularizers
 from keras import constraints
 from keras import backend as K
 from keras.legacy import interfaces
 import tensorflow as tf
+
+from keras_contrib import backend as KC
 
 
 class FreezeGroupNormalization(Layer):
@@ -114,6 +116,20 @@ class FreezeGroupNormalization(Layer):
         # Determines whether broadcasting is needed.
         needs_broadcasting = (sorted(reduction_axes) != list(range(ndim))[:-1])
 
+        def normalization(mean, variance):
+            normed_training = (inputs_reshape - mean) / (K.sqrt(variance + self.epsilon))
+
+            # In this case we must explicitly broadcast all parameters.
+            if self.scale:
+                broadcast_gamma = K.reshape(self.gamma, broadcast_shape)
+                normed_training = normed_training * broadcast_gamma
+
+            if self.center:
+                broadcast_beta = K.reshape(self.beta, broadcast_shape)
+                normed_training = normed_training + broadcast_beta
+
+            return normed_training
+
         def normalize_inference():
             if needs_broadcasting:
                 # In this case we must explicitly broadcast all parameters.
@@ -121,33 +137,10 @@ class FreezeGroupNormalization(Layer):
                                                   broadcast_shape)
                 broadcast_moving_variance = K.reshape(self.moving_variance,
                                                       broadcast_shape)
-                if self.center:
-                    broadcast_beta = K.reshape(self.beta, broadcast_shape)
-                else:
-                    broadcast_beta = None
-                if self.scale:
-                    broadcast_gamma = K.reshape(self.gamma,
-                                                broadcast_shape)
-                else:
-                    broadcast_gamma = None
-                outputs = K.batch_normalization(
-                    inputs_reshape,
-                    broadcast_moving_mean,
-                    broadcast_moving_variance,
-                    broadcast_beta,
-                    broadcast_gamma,
-                    axis=self.axis,
-                    epsilon=self.epsilon)
+                outputs = normalization(broadcast_moving_mean, broadcast_moving_variance)
                 return K.reshape(K.permute_dimensions(outputs, (0,1,2,4,3)), old_shape)
             else:
-                outputs = K.batch_normalization(
-                    inputs_reshape,
-                    self.moving_mean,
-                    self.moving_variance,
-                    self.beta,
-                    self.gamma,
-                    axis=self.axis,
-                    epsilon=self.epsilon)
+                outputs = normalization(self.moving_mean, self.moving_variance)
                 return K.reshape(K.permute_dimensions(outputs, (0,1,2,4,3)), old_shape)
 
         # If the learning phase is *static* and set to inference:
@@ -155,9 +148,20 @@ class FreezeGroupNormalization(Layer):
             return normalize_inference()
 
         # If the learning is either dynamic, or set to training:
-        normed_training, mean, variance = K.normalize_batch_in_training(
-            inputs_reshape, self.gamma, self.beta, reduction_axes,
-            epsilon=self.epsilon)
+        mean, variance = KC.moments(inputs_reshape, [1,2,3], keep_dims=True)
+        normed_training = (inputs_reshape - mean) / (K.sqrt(variance + self.epsilon))
+
+        # In this case we must explicitly broadcast all parameters.
+        if self.scale:
+            broadcast_gamma = K.reshape(self.gamma, broadcast_shape)
+            normed_training = normed_training * broadcast_gamma
+
+        if self.center:
+            broadcast_beta = K.reshape(self.beta, broadcast_shape)
+            normed_training = normed_training + broadcast_beta
+
+        mean = K.mean(mean, [0,1,2,3])
+        variance = K.mean(variance, [0,1,2,3])
 
         if K.backend() != 'cntk':
             sample_size = K.prod([K.shape(inputs_reshape)[axis]
